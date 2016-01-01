@@ -1,0 +1,113 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+output: 
+  html_document:
+    keep_md: true
+---
+
+
+## Loading and preprocessing the data
+```{r echo=TRUE}
+    activity <- read.csv('activity.csv')
+    clean_steps <- activity[!is.na(activity$steps),]
+```
+
+
+## What is mean total number of steps taken per day?
+```{r echo=TRUE}
+    activity <- read.csv('activity.csv')
+    clean_steps <- activity[!is.na(activity$steps),]
+    steps_per_day <- tapply(clean_steps$steps, factor(clean_steps$date), FUN=sum)
+    hist(steps_per_day, xlab='Total Steps', main='Distribution of Total Steps Per Day', col='red')
+
+    mean(steps_per_day)
+    median(steps_per_day)
+```
+
+
+
+## What is the average daily activity pattern?
+
+```{r echo=TRUE}
+    activity <- read.csv('activity.csv')
+    clean_steps <- activity[!is.na(activity$steps),]
+    steps_per_interval <- tapply(clean_steps$steps, factor(clean_steps$interval), FUN=mean)
+    plot(levels(factor(clean_steps$interval)), 
+         steps_per_interval, 
+         type="l", 
+         col="blue", 
+         xlab="Minute Interval", 
+         ylab="Avg. Steps", 
+         main="Average Steps Taken Per 5 Minute Interval")
+
+    names(which.max(steps_per_interval))
+```
+
+
+## Imputing missing values
+
+```{r echo=TRUE}
+    activity <- read.csv('activity.csv')
+    sum(is.na(activity))
+
+    clean_steps <- activity[!is.na(activity$steps),]
+    steps_per_interval <- tapply(clean_steps$steps, factor(clean_steps$interval), FUN=median)
+
+    interpreted_activity <- activity
+
+    median_steps <- sapply(activity[is.na(activity$steps), 
+                           c("interval")], 
+                           FUN=function(x) steps_per_interval[as.character(x)])
+    interpreted_activity$steps[is.na(interpreted_activity$steps)] <- median_steps
+            
+    steps_per_day <- tapply(interpreted_activity$steps, factor(interpreted_activity$date), FUN=sum)
+
+    hist(steps_per_day, xlab='Total Steps', main='Distribution of Total Steps Per Day', col='red')
+
+    mean(steps_per_day)
+    median(steps_per_day)
+
+```
+
+Yes. There is a difference in the mean and median steps per day when we impute missing data.
+Imputing the median has lowered both the mean and median of the total number of a steps per day, since the median for most intervals was 0.
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+```{r echo=TRUE}
+    library(lattice)
+    activity <- read.csv('activity.csv')
+    
+    clean_steps <- activity[!is.na(activity$steps),]
+    steps_per_interval <- tapply(clean_steps$steps, factor(clean_steps$interval), FUN=median)
+
+    interpreted_activity <- activity
+    median_steps <- sapply(activity[is.na(activity$steps), 
+                           c("interval")], 
+                           FUN=function(x) steps_per_interval[as.character(x)])
+    interpreted_activity$steps[is.na(interpreted_activity$steps)] <- median_steps
+
+    dayOfWeek <- sapply(activity$date, FUN=function(x) weekdays(strptime(x, '%Y-%m-%d'), abbreviate=TRUE))
+
+    interpreted_activity$dayOfWeek <- sapply(dayOfWeek, 
+                                             FUN=function(x) if(x %in% c('Sat', 'Sun')) "weekend" 
+                                                             else "weekday")
+
+    steps_avg <- as.data.frame(
+                    as.table(
+                        with(interpreted_activity, 
+                             tapply(steps, 
+                                    list(interval, dayOfWeek), 
+                                    FUN=mean))))
+
+    names(steps_avg) <- c('interval', 'dayOfWeek', 'steps')
+    steps_avg$interval <- as.numeric(as.character(steps_avg$interval))
+
+    xyplot(steps~interval | dayOfWeek, 
+           data=steps_avg, 
+           xlab="Interval", 
+           ylab="Number of Steps", 
+           xlim=seq(0,2400,5), 
+           type="l", 
+           layout=c(1,2))
+```

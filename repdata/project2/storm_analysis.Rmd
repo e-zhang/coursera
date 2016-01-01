@@ -1,0 +1,154 @@
+---
+title: "Determining Storm Events with Largest Consequences"
+output: 
+  pdf_document:
+  html_document:
+    keep_md: true
+---
+
+
+## Synopsis 
+
+This document details the process and results of an analysis of NWS Storm Data collected from 1950 to 2011. The analysis will pertain to comparing the consequences of severe storm events on both population health and monetary damages. The results of this analysis indicates a distinct set of storm events that caused sever population damages as well as a different set of storms that had largest economic damages.
+
+## Data Processing 
+
+### Loading and Prepocessing
+
+We start with a bizp2 file that is decompressed via the bunzip2 executable in our linux distro. 
+
+We read in the raw storm data from the unzipped csv file and store it in a #table data_frame
+```{r echo=TRUE, cache=TRUE}
+library(dplyr)
+
+storm_data <- read.csv("repdata-data-StormData.csv")
+
+storm <- tbl_df(storm_data)
+
+``` 
+
+We take a look at the dimensions and available columns of our data set
+```{r echo=TRUE}
+dim(storm)
+
+names(storm)
+
+```
+
+If we look at EVTYPE factors, we will note that there a lot of inconsistencies with spelling and captilization. We will attempt to mitigate some of the inconsistencies by using lower case for all EVTYPEs as well as removing the summary rows.
+```{r echo=TRUE}
+storm$EVTYPE <- tolower(storm$EVTYPE)
+storm <- filter(storm, !grepl("summary", EVTYPE))
+```
+
+Now we need to select the columns of interest to our analysis
+```{r echo=TRUE}
+storm_damages <- select(storm, c(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP))
+```
+
+To get a feel for our data, verify the amount of unknown data for the columns of interest
+```{r echo=TRUE}
+mean(is.na(storm_damages$FATALITIES))
+mean(is.na(storm_damages$INJURIES))
+mean(is.na(storm_damages$PROPDMG))
+mean(is.na(storm_damages$CROPDMG))
+```
+
+Since the data for damages is represented with a mantissa and exponent, we will create an additional column for property and crop damage that represents the full value of the damage. First we need to determine the possible exponent values
+```{r echo=TRUE}
+levels(factor(storm_damages$PROPDMGEXP))
+levels(factor(storm_damages$CROPDMGEXP))
+```
+
+We can then create a function that takes the exponent and returns the proper base 10 multiplier, treating unknown symbols as power 0 or 1
+```{r echo=TRUE}
+get_pow <- function(x) {
+if(as.numeric(x) %in% 1:8) 10^(as.numeric(x))
+else if(tolower(x) == 'h') 100
+else if(tolower(x) == 'k') 1000
+else if(tolower(x) == 'm') 1^6
+else if(tolower(x) == 'b') 1e9
+else 1
+}
+```
+
+Finally, we can use _mutate()_ to create two new columns that represent the normalized value of damages. Now we can talk about damages with the total value only.
+```{r echo=TRUE}
+storm_damages <- mutate(storm_damages,
+                        PROPDMGTOTAL = PROPDMG * get_pow(PROPDMGEXP),
+                        CROPDMGTOTAL = CROPDMG * get_pow(CROPDMGEXP))
+storm_damages <- select(storm_damages, c(EVTYPE, FATALITIES, INJURIES,CROPDMGTOTAL, PROPDMGTOTAL))
+```
+
+### Preparing Data
+
+Now that we have normalized our dataset, we can start preparing the data for analysis. The first thing we will want to do is to group the dataset by the EVTYPE and get the mean and median of each of the relevant columns per EVTYPE.
+```{r echo=TRUE}
+storm_groups <- group_by(storm_damages, EVTYPE)
+storm_summary <- summarise_each(storm_groups, funs(mean, median))
+```
+
+Finally, we create aggregate column totals to represent the net effect of INJURIES and FATALITIES as well as CROPDMGTOTAL and PROPDMGTOTAL and only select the storm events where there was non-zero effect in either.
+
+```{r echo=TRUE}
+storm_agg <- mutate(storm_summary, 
+                    POPULATION_mean = FATALITIES_mean + INJURIES_mean, 
+                    ECONOMIC_mean = PROPDMGTOTAL_mean + CROPDMGTOTAL_mean,
+                    POPULATION_median = FATALITIES_median + INJURIES_median, 
+                    ECONOMIC_median = PROPDMGTOTAL_median + CROPDMGTOTAL_median)
+
+storm_mean <- select(filter(storm_agg, POPULATION_mean > 0 | ECONOMIC_mean > 0), 
+                     c(EVTYPE, POPULATION_mean, ECONOMIC_mean))
+storm_median <- select(filter(storm_agg, POPULATION_median > 0 | ECONOMIC_median > 0),
+                       c(EVTYPE, POPULATION_median, ECONOMIC_median))
+```
+
+
+## Analysis
+
+
+Given the mean and median of the different storm events, we can generate a scatterplot of the economic damage caused by a particular event with the population damage.
+This will show us the distribution of storm events on the same scale of population damage and economic damage.
+
+```{r echo=TRUE, figure.width = 800, figure.height = 800}
+library(ggplot2)
+
+population_mean_q <- quantile(storm_mean$POPULATION_mean, probs=seq(0,1,0.01))
+economic_mean_q <- quantile(storm_mean$ECONOMIC_mean, probs=seq(0,1,0.01))
+ggplot(storm_mean, aes(x=ECONOMIC_mean, y=POPULATION_mean, label=EVTYPE)) +
+    ggtitle("Distribution of Mean of Storm Damages") + 
+    geom_point() + 
+    geom_text(data=subset(storm_mean, POPULATION_mean > population_mean_q["98%"] | 
+                                      ECONOMIC_mean > economic_mean_q["98%"]), 
+              size=3, hjust=0.5, vjust=-1, colour="red")
+
+population_median_q <- quantile(storm_median$POPULATION_median, probs=seq(0,1,0.01))
+economic_median_q <- quantile(storm_median$ECONOMIC_median, probs=seq(0,1,0.01))
+ggplot(storm_median, aes(x=ECONOMIC_median, y=POPULATION_median, label=EVTYPE)) + 
+    ggtitle("Distribution of Median of Storm Damages") + 
+    geom_point() + 
+    geom_text(data=subset(storm_median, POPULATION_median > population_median_q["98%"] | 
+                                      ECONOMIC_median > economic_median_q["98%"]), 
+              size=3, hjust=0.5, vjust=-1, colour="red")
+
+```
+
+As we can tell there are a few storm events that have either peronsal or economic damages that are mcuh larger than other storms. However there are no storms with large damages in both categories. Here is a list of the storm events that are in the 98th percentile in damages 
+``` {r echo=TRUE, kable}
+library(knitr)
+
+kable(arrange(filter(storm_mean, POPULATION_mean > population_mean_q["98%"] | 
+                                 ECONOMIC_mean > economic_mean_q["98%"]),
+      desc(POPULATION_mean), desc(ECONOMIC_mean)))
+kable(arrange(filter(storm_median, POPULATION_median > population_median_q["98%"] | 
+                                 ECONOMIC_median > economic_median_q["98%"]),
+      desc(POPULATION_median), desc(ECONOMIC_median)))
+
+```
+
+
+## Results
+
+As we can see from the analysis, there are a few distinct storm events that can be identified as outliers resulting in severe population and economic damages. A cursory review of these event types, we can notice a few common trends. It would appear that in terms of population damage, storms such as tropical storms or thunderstorms, especilly when accompanied with winds, usually amount to the largest losses. Similarly, in terms of economic consequences, the storms with extreme cold or wetness result in large economic losses.
+
+Thus it would appear that these two major groupings of events on average the largest harmful effects to economic and population stability.

@@ -1,0 +1,87 @@
+---
+output: pdf_document
+---
+--- 
+title: ToothGrowth Data Analysis
+author: Eric Zhang
+---
+
+## Overview
+The ToothGrowth dataset will be explored and analyzed to determine the confidence intervals for the tooth growth as determened by different supplements and varying dosages.
+
+## Data
+We load the ToothGrowth dataset and perform some exploratory data analysis. 
+Since the dosages are specified amounts, we treat them as a label and convert them to factors.
+
+```{r}
+data(ToothGrowth)
+
+ToothGrowth$dose <- factor(ToothGrowth$dose)
+
+summary(ToothGrowth)
+```
+
+As we can see, the data set is divided by two separate supplements each of three varying dosages. So for each supplement-dosage pair, there are 10 samples.
+
+The following plots show the distribution of tooth growth length when factoring in the different dosages and supplements.
+
+```{r}
+library(ggplot2)
+
+g <- ggplot(data=ToothGrowth, 
+            aes(y=len, x=dose, colour=supp, group=dose))
+g <- g + geom_point()
+g <- g + facet_grid(.~dose)
+            
+g
+```
+
+This gives a more concise depiction of the tooth growths observed for each supplement group at each dosage.
+
+## Comparison of Tooth Growth
+In order to compare the underlying groups, we have to split the data set into individual sets for each supplement-dosage pair.
+
+```{r}
+vc_05 <- ToothGrowth[1:10,]
+vc_10 <- ToothGrowth[11:20,]
+vc_20 <- ToothGrowth[21:30,]
+oj_05 <- ToothGrowth[31:40,]
+oj_10 <- ToothGrowth[41:50,]
+oj_20 <- ToothGrowth[51:60,]
+``` 
+
+We can now compare the differences in the observed tooth growth length between the two supplements at each dosage. So the two populations compared at each dose will be the different supplements. 
+Since the experiment was done on the same 10 guinea pigs, we have a paired t-test because the test groups are the same. 
+
+For each of the dosages, we perform a t-test of the two set of supplement samples. 
+
+### 0.5 mg Dosage
+```{r}
+t.test(vc_05$len, oj_05$len, paired=TRUE)
+```
+The t-test shows a 95% confidence interval that is negative and does not contain 0. Alternatively, the null hypothesis that the difference  between means in the two samples is 0 ($H_0: \mu_{vc} - \mu_{oj} = 0$) can be rejected since the p-value of the t-test is less than the 5% type I error rate.
+
+The mean of the differences is -5.25, which suggests that on average at the 0.5 mg dosage, ascorbic acid results in a length of 5.25 less than orange juice.
+
+### 1.0 mg Dosage
+```{r}
+t.test(vc_10$len, oj_10$len, paired=TRUE)
+```
+The t-test shows a 95% confidence interval that is negative and does not contain 0. Alternatively, the null hypothesis that the differencebetween means in the two samples is 0 ($H_0: \mu_{vc} - \mu_{oj} = 0$) will fail to be rejected since the p-value of the t-test is greater than the 5% type I error rate.
+
+Thus, for the 2mg dosage, statistically, the difference between the means of the two delivery methods is probably measurably 0. This means that to a 95% confidence level, the effects are indistinguishable.
+
+### 2.0 mg Dosage
+```{r}
+t.test(vc_20$len, oj_20$len, paired=TRUE)
+```
+The t-test shows a 95% confidence interval that does contain 0. Alternatively, the null hypothesis that the difference between means in the two samples is 0 ($H_0: \mu_{vc} - \mu_{oj} = 0$) can be rejected since the p-value of the t-test is less than the 5% type I error rate.
+
+The mean of the differences is -5.93, which suggests that on average at the 1 mg dosage, ascorbic acid results in a length of 5.93 less than orange juice.
+
+## Conclusions
+From the results of the t-tests, we can see that for the 0.5mg and 1mg dosage the two supplements had a statistically significant different effect to tooth growth length, specifically the orange juice delivery method led to larger growth on average.
+
+However, at the 2mg dosage, the differences between the two samples was not statistically significant so we cannot say with any certainy that there is a difference in affect of the two supplements.
+
+The conclusions of this analysis makes the assumption that tooth growth length is measured from 10 guinea pigs that were drawn randomly from an independently and identically distributed sample. It also makes the assumption that each measurement of the tooth growth length is also independent as well as that it follows a normal distribution with some mean and variance. Finally, the results assume that a 95% confidence-interval or a 5% type I error rate is sufficient enough of a benchmark to determine if the differences in effects of the delivery methods at each dosage is statistically significant.

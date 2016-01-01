@@ -1,0 +1,106 @@
+---
+title: "Exponential Distribution and the Central Limit Theorem"
+author: "Eric Zhang"
+output: pdf_document
+---
+
+## Overview
+This report is an exploration of the Central Limit Theorem based on samples from an exponential distribution. Based off 1000 simulations of 40 samples each from an expoonential distribution, the claims of the Central Limit Theorem will be experimentally observed. 
+
+## Simulation
+The simualtion is set up with the following parameters
+```{r}
+lambda <- 0.2
+samples <- 40
+sims <- 1000
+```
+where 
+
+* `lambda` is the rate parameter of the underlying exponential distribution
+
+* `samples` is the total number of samples that wil be averaged 
+
+* `sims` is the number of points in the distribution of averages
+
+The distribution is created with the following
+```{r}
+mns = NULL
+for(i in 1:sims)
+    mns = c(mns, mean(rexp(samples, lambda)))
+dat <- data.frame(x=mns)
+```
+where `rexp` is used to draw `samples` number of observations form an exponential distribution. The mean, or average, of the observations is then taken and appended to our previously captured data. At the end the data is stored in a `data.frame` for further analysis. 
+
+
+## Sample Mean
+Given our sampled data, we can compare the mean of our samples with the theoretical mean of the distribution.
+```{r}
+library(knitr)
+theo <- 1/lambda
+mu_s <- mean(dat$x)
+mu_err <- round(abs(mu_s - theo)/theo * 100,1)
+
+m <- matrix(c(mu_s, theo, mu_err), ncol=3, nrow=1)
+colnames(m) <- c('sample', 'theoretical', 'error')
+
+kable(m, digits=3, caption='Comparison of Sample and Theoretical Mean')
+```
+
+Since we know the underlying distribution to be exponential, the population mean is thus the inverse of the rate parameter. The error is calculated as a percent difference between the measured and the expected means.
+
+As can be seen in the table, the sample mean and the theoretical mean are experimentally equivalent. 
+
+
+## Sample Variance
+Similarly, we can compare the variance of our samples with the theoretical variance of the distribution.
+
+```{r}
+library(knitr)
+v <- (1/lambda)^2 / samples
+v_s <- var(dat$x)
+v_err <- round(abs(v_s - v) / v * 100,1)
+
+m <- matrix(c(v_s, v, v_err), ncol=3, nrow=1)
+colnames(m) <- c('sample', 'theoretical', 'error')
+
+kable(m, digits=3, caption='Comparison of Sample and Theoretical Variances')
+```
+
+We know that the theoretical variance of the distribution is the variance of the population divided by the number of samples we are averaging across. The error is calculated as the percent difference between the measured and theoretical variance.
+
+As shown in the table, the sample variance observed matches that of the theoretical variance dicatated by the CLT.
+
+
+## Distribution of Averages
+
+We can demonstrate the normality of the sampled distribution of averages by plotting a histogram of the density and overlaying it with the probability density function of a normal distribution with the sample mean and variance as well as the theoretical mean and variance.
+
+```{r}
+library(ggplot2)
+
+g <- ggplot(dat, aes(x=x)) + ggtitle("Sampled Distribution of Averages")
+
+# add histogram
+g <- g + geom_histogram(alpha=0.2, 
+                        binwidth=0.3, 
+                        colour='black', 
+                        aes(y=..density..))
+# add sample distribution
+g <- g + stat_function(fun=dnorm, 
+                       args=c(mean(mns), sd(mns)), 
+                       aes(colour='sample'), 
+                       size=1.1)
+# add theoretical mean distribution
+g <- g + stat_function(fun=dnorm, 
+                       args=c(1/lambda, (1/lambda)/sqrt(samples)),
+                       aes(colour='theoretical'),
+                       size=1.1)
+
+g <- g + scale_colour_manual("Distributions", 
+                             values=c('blue', 'red'))
+
+g
+```
+
+As we can see, the histogram shows that about half the probability density lines up with both the sample and theoretical means of the normal distribution. The variance also matches as the shape of the histogram, or the probability density of the sampled data, follows the shape of the corresponding normal distributions.
+

@@ -1,0 +1,113 @@
+
+---
+title: "Effect of Car Transmission Type On MPG"
+author: "Eric Zhang"
+output: pdf_document
+---
+
+## Overview
+From the `mtcars` dataset, we seek to determine a relationship between the type of transmission type in a car and the effect on the miles-per-gallon (mpg). A multivariate linear regression will be used as the model to quantify the effect of either an automatic or manual transmission. As the analysis to follow shows, we determine that there is a significant effect on mpg due to the transmission type, particularly that a manual transmission yields a higher mpg.
+
+
+## Data Processing
+
+First we read the data and look at a summary of the values. Next we convert all labeled data to the corresponding factors rather than treat as continuous values.
+```{r}
+data(mtcars)
+mtcars$cyl <- factor(mtcars$cyl)
+mtcars$vs <- factor(mtcars$vs)
+mtcars$am <- factor(mtcars$am)
+mtcars$gear <- factor(mtcars$gear)
+mtcars$carb <- factor(mtcars$carb)
+```
+
+## Exploratory Data Analysis
+
+A cursory plot of the `mpg` values for cars with both a manual transmission and an automatic transmission can show us if there is even a possibility of a relationship between transmission and `mpg`. 
+
+```{r, fig.height=4, fig.width=6, echo=FALSE}
+plot(mpg ~ I(factor(am, labels=c('Auto', 'Manual'))), 
+     data=mtcars, 
+     main='MPG For Cars with Different Transmission Types', 
+     xlab='Transmission Type')
+```
+
+As we can see, there is an observable difference in MPG between transmission types, with manual transmission being roughly higher. However, the populations do overlap, so we must account for other confounding variables with a multivariate linear model. 
+
+## Model Selection
+
+In order to select a linear model, first we run a test of the multilinearity of the possible variables in the regression. We do this by using the variance inflation factors (`vif`) function in the `car` package. This test measures the relative infaltion of variance in the estimated coefficients due to colinearity between regressors. 
+```{r}
+library(car)
+vifs <- vif(lm(mpg~., data=mtcars))
+vifs[order(vifs[,3]),]
+
+```
+
+Since we are looking at the generalized VIFs (due to factors, with df corresponding to the number of levels), we can use $GVIF^{1/(2*df)}$ as a linearized measure of variance inflation. 
+
+At this point, we want to select a set of regressors such that the variance inflation factor does not exceed 4, or the $GVIF^{1/(2*df)} < 2$, for any single one of them. This caps the total standard error of the estimates to 2 times that of without the regressor. Procedurally, we continue to caculate the VIFs and remove the regressor with the largest inflation factor, until all variables have a value < 2.
+
+The following is the result of the repeated runs.
+```{r}
+vifs <- vif(lm(mpg~ carb+gear+am+cyl, data=mtcars))
+vifs[order(vifs[,3]),]
+```
+
+Sorting by the lowest VIF and adding them one at a time, we generate the following 4 fits and generate an analysis-of-variance table. Pairing this with the `anova` method, we can compare fitted models and determine if adding more terms, based on lowest variance inflation, is significant to the model. 
+
+```{r}
+fit1 <- lm(mpg ~ am, data=mtcars)
+fit2 <- update(fit1, mpg ~ am + carb)
+fit3 <- update(fit1, mpg ~ am + carb + cyl)
+fit4 <- update(fit1, mpg ~ am + carb + cyl + gear)
+
+anova(fit1,fit2,fit3,fit4)
+```
+
+The analysis shows us that increasing the regression to 4 terms generates p-value that is not significant even to a 90% confidence interval. As a result, we fail to reject the null hypothesis that the final term, `gear`, provides a statistically significant effect on the model. As a result, we select the multivariate model based on the previous 3 regressors in `fit3`: transmission, number of carburetors, and number of cylinders. This implies that all other regressor are colinear to some degree in these three selected regressors for this model. From a conceptual standpoint, this also makes sense as a lot of the measurements can be directly related to these factors. For example, cars with more carburetors and cylinders tend to weigh more since there are more parts. 
+
+Our final linear model is as follows, applying `relevel` to the carburetors and cylinders factors so that we pick the base reference that yields the most statistically significant estimates.
+
+```{r}
+library(knitr)
+fit <- lm(mpg ~ am + I(relevel(carb, '4')) + I(relevel(cyl, '8')), data=mtcars)
+kable(summary(fit)$coeff, digits=3)
+```
+
+## Linear Model
+
+Now that we have selected our linear model, we can look at the leverages as well as the residuals to confirm that we have chosen an appropriate linear model. 
+
+By looking at influence measures, such as `dfbetas` and `hatvalues`, we can determine if any single point is generating an anomalous amount of leverage in the linear model. 
+
+```{r}
+library(knitr)
+summary(hatvalues(fit))
+
+summary(dfbetas(fit))
+```
+
+Since both the `hatvalues` and `dfbetas` reveal a pretty small distribution of values, we can conclude that no single point is creating a high leverage on the linear model. 
+
+Secondly, if we look at the residual plots we can identify if there are any remaining correlation in the residuals that would signify a poor fit.
+```{r, fig.height = 4, fig.width=6}
+plot(predict(fit), resid(fit), pch='*', col='blue', main='Residual Plot of Linear Model')
+```
+
+As we see in this plot, the residuals seem to be uncorrelated and are scattered around 0. This is a good indicator that the residuals are not correlated with any of the regressors we have chosen in our model. 
+
+## Interpretation of Linear Model
+Now that we have chosen our model, the estimates of the coefficients can be interpreted to determine the effects of transmission type on the mpg of a car.
+
+Looking at our coefficient for `am1`,this coefficient is a relative measure of the binary categorical value. Since automatic transmission is represented as $am=0$ and manual transmission is represented as $am=1$, the coefficient directly measures the difference in mpg of a manual transmission compared to an automatic transmission. 
+
+The t-test statistic and corresponding p-value demonstrate that this estimation rejects the null hypothesis, $H_0: \beta_{am} = 0$, with up to a 1% type I error rate. As a result, we can claim that the estimated value of the difference in automatic and manual transmission is statistically significant to a 99% confidence interval. 
+
+Since the value of the `am1` coefficient is positive, this means that by having a manaul transmission, the mpg is higher than if we had an automatic transmission where the effect of the `am1` regressor is 0.
+
+Worth noting from the `anova` F-test statistic, we know that these regressors are significant; however, as we see in the estimated coefficient, not all of the individual categories are statistically significant. In which case, we fail to reject the null hypothesis that the estimation is non-zero, or alternatively has an effect compared to the reference. This is indicative of perhaps the category being too granular. For example, for carburetor numbers 3 and above, there may not be any significant relative difference. However, this does not mean the category as a whole is not significant, which is why we still include the regressor as a variable.
+
+## Conclusion
+
+Given that the `am1` regressor is estimated to be $4.274$ with a 1% signficance level, we conclude that the a manual transmission is better for MPG relative to an automatic transmission. Specifically, we determine that the difference between an automatic transmission and manual transmission is estimated to be 4.274 miles-per-gallon in favor of a manual transmission. This confirms our original presumption after the exploratory data analysis.

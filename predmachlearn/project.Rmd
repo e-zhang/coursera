@@ -1,0 +1,104 @@
+---
+title: "Practical Machine Learning: Exerice Quality"
+author: "Eric Zhang"
+output: html_document
+---
+
+## Overview
+
+This report is an analysis of the Weight Lifting Exercise dataset provided form GroupWare@LSE. The dataset contains measurements recorded from the accelerometers of various mobile devices as well as a categorization of the performance of a particular exercise. We seek to create a model that will allow a prediction of the "classe" category of how well an exercise was performed based on the relevant measurements from the devices.
+
+## Data Processing
+First we load the downloaded training data set from the GroupWare@LSE hosted site. We treat all variants of missing data as NAs.
+```{r cache=TRUE}
+raw_data <- read.csv("pml-training.csv", na.strings=c("NA", "", "#DIV/0!"))
+dim(raw_data)
+```
+
+Next we perform some basic preprocessing by removing the irrelevant measurements such as timestamps, windows, and usernames. This should leave only the raw measurements left. 
+```{r cache=TRUE}
+# remove irrelevant data
+raw_data <- raw_data[, -grep("timestamp", colnames(raw_data))]
+raw_data <- raw_data[, -grep("window", colnames(raw_data))]
+raw_data$user_name <- NULL
+raw_data$X <- NULL
+```
+
+We clean our data by removing columns that have more than 50% of invalid/unavailable data since those measurements don't provide the model any indicators. We also note that we don't have to impute any data since the remaining columns in the clean data set have no missing values. 
+```{r cache=TRUE}
+# remove all columns where more than 50% of the data is na
+clean_data <- raw_data[, colSums(is.na(raw_data)) < 0.5*nrow(raw_data)]
+dim(clean_data)
+```
+
+
+## Model Training
+
+Next we split up our training data into a training set and validationset so that we can compare our models as well as estimating our out of sample error. 
+
+```{r cache=TRUE}
+library(caret)
+# set a seed for reproducible results
+set.seed(333)
+
+# split training/validation 70%/30%
+inTrain <- createDataPartition(y=clean_data$classe, p=0.7, list=F)
+training <- clean_data[inTrain,]
+validation <- clean_data[-inTrain,]
+```
+
+We choose to train 3 separate models to select among: random forest, gradient boosting, linear discriminant analysis. Random forests and gradient boosting are ensemble methods that allow multiple weaker decision models to work together to perform a more accurate prediction. Linear discriminant analysis fits a probabilistic model that determines a regression fit as opposed to a decision tree. We will seek to train these 3 models and then perform a selection process to pick the most accurate model. 
+We use the default tuning and control parameters provided by the `caret` package as they are appropriate and sensible.
+```{r cache=TRUE,warning=FALSE, message=FALSE}
+modRF <- train(classe ~ ., data=training, method="rf")
+modLDA <- train(classe ~ ., data=training, method="lda")
+modGBM <- train(classe ~., data=training, method="gbm", verbose=F)
+```
+
+## Model Selection
+
+In order to compare our trained models, we select the model that has the highest accuracy from the training set as well as the predictions from the validation set. 
+
+First we compare the accuracy of the 3 models from the training set using the `resamples` functionality in the `caret` package. 
+```{r cache=TRUE}
+results <- resamples(list(RF=modRF, LDA=modLDA, GBM=modGBM))
+bwplot(results)
+```
+
+Secondly, we use the trained models to predict the data from our validation set and compare the accuracy of these predictions.
+```{r cache=TRUE}
+predRF <- predict(modRF, validation)
+predGBM <- predict(modGBM, validation)
+predLDA <- predict(modLDA, validation)
+
+```
+```{r cache=TRUE, kable, echo=FALSE}
+library(knitr)
+accRF<-confusionMatrix(predRF, validation$classe)$overall
+accGBM<-confusionMatrix(predGBM, validation$classe)$overall
+accLDA<-confusionMatrix(predLDA, validation$classe)$overall
+
+acc <- rbind(accRF, accGBM, accLDA)
+rownames(acc) <- c('predRF', 'predGBM', 'predLDA')
+colnames(acc) <- names(accRF)
+
+kable(acc[,1:4], digits=3)
+```
+
+As a result of these comparisons, we decide on a random forest model as the final selected model. 
+
+From the prediciton on the validation set we see that a random forest model has an accuracy of 0.994 with a 95% confidence interval of `(0.992, 0.996)`. This translates to an estimated out of sample error of 0.006 or 0.6%.
+
+
+## Testing
+
+We read in the downloaded testing file in the same manner.
+```{r cache=TRUE}
+test_data <- read.csv("pml-training.csv", na.strings=c("NA", "", "#DIV/0!"))
+dim(test_data)
+```
+
+To make our predictions we simply run predict with our random forest model on the testing data.
+```{r cache=TRUE, echo=FALSE}
+answers <- predict(modRF, test_data)
+```
